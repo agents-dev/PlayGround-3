@@ -1,0 +1,15 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e4]: "FPS: 89 | Блоков: 6703XYZ: 16.5 / 4.0 / 16.5"
+  - generic [ref=e5]: ЛКМ — сломать · ПКМ — поставить1–8 выбор · F полёт · R респаун
+  - generic [ref=e6]:
+    - generic [ref=e7] [cursor=pointer]: 1 Трава
+    - generic [ref=e10] [cursor=pointer]: 2 Земля
+    - generic [ref=e13] [cursor=pointer]: 3 Камень
+    - generic [ref=e16] [cursor=pointer]: 4 Дерево
+    - generic [ref=e19] [cursor=pointer]: 5 Листва
+    - generic [ref=e22] [cursor=pointer]: 6 Песок
+    - generic [ref=e25] [cursor=pointer]: 7 Доски
+    - generic [ref=e28] [cursor=pointer]: 8 Бедрок
+  - generic [ref=e31]:
+    - button "💾 Сохранить" [ref=e32] [cursor=pointer]
+    - button "🌍 Новый мир" [ref=e33] [cursor=pointer]

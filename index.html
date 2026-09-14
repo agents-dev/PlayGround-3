@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Мини-Майнкрафт — воксельная песочница</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%235cb531'/><rect y='10' width='16' height='6' fill='%237a5c33'/></svg>">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:100%; height:100%; overflow:hidden; background:#87ceeb; font-family:'Segoe UI',system-ui,sans-serif; }
+  #game { position:fixed; inset:0; }
+  canvas { display:block; }
+  #crosshair { position:fixed; left:50%; top:50%; width:20px; height:20px; transform:translate(-50%,-50%); pointer-events:none; z-index:10; }
+  #crosshair::before, #crosshair::after { content:''; position:absolute; background:rgba(255,255,255,.9); mix-blend-mode:difference; }
+  #crosshair::before { left:9px; top:2px; width:2px; height:16px; }
+  #crosshair::after { left:2px; top:9px; width:16px; height:2px; }
+  #overlay { position:fixed; inset:0; background:rgba(0,0,0,.72); display:flex; align-items:center; justify-content:center; z-index:50; backdrop-filter:blur(4px); }
+  #overlay.hidden { display:none; }
+  .panel { background:#2b2b2b; color:#fff; border-radius:12px; padding:28px 32px; max-width:520px; width:calc(100% - 40px); text-align:center; box-shadow:0 20px 60px rgba(0,0,0,.5); border:3px solid #555; }
+  .panel h1 { font-size:28px; margin-bottom:6px; letter-spacing:1px; }
+  .panel h1 span { color:#7CFC00; }
+  .panel p { color:#ccc; font-size:14px; line-height:1.6; margin:8px 0; }
+  .panel kbd { background:#111; border:1px solid #666; border-bottom-width:3px; border-radius:4px; padding:1px 7px; font-size:12px; font-family:monospace; }
+  #playBtn { margin-top:14px; background:#5cb531; border:none; border-bottom:4px solid #3a7d1f; color:#fff; font-size:18px; font-weight:bold; padding:12px 42px; border-radius:8px; cursor:pointer; }
+  #playBtn:hover { background:#6bcf3a; }
+  #hotbar { position:fixed; bottom:12px; left:50%; transform:translateX(-50%); display:flex; gap:6px; z-index:20; }
+  .slot { width:56px; height:56px; background:rgba(0,0,0,.55); border:3px solid #555; border-radius:8px; display:flex; flex-direction:column; align-items:center; justify-content:center; cursor:pointer; user-select:none; }
+  .slot.selected { border-color:#fff; box-shadow:0 0 12px #fff; }
+  .slot canvas { width:32px; height:32px; image-rendering:pixelated; }
+  .slot small { color:#fff; font-size:10px; margin-top:1px; }
+  #info { position:fixed; top:10px; left:10px; color:#fff; background:rgba(0,0,0,.5); padding:8px 12px; border-radius:8px; font-size:12px; z-index:20; line-height:1.7; text-shadow:0 1px 2px #000; }
+  #hint { position:fixed; top:10px; right:10px; color:#fff; background:rgba(0,0,0,.5); padding:8px 12px; border-radius:8px; font-size:12px; z-index:20; text-align:right; line-height:1.7; }
+  #toolbar { position:fixed; bottom:12px; right:12px; display:flex; gap:6px; z-index:20; }
+  #toolbar button { background:rgba(0,0,0,.6); color:#fff; border:1px solid #777; border-radius:6px; padding:8px 10px; font-size:12px; cursor:pointer; }
+  #toolbar button:hover { background:rgba(0,0,0,.85); }
+  #touchUI { display:none; }
+  @media (pointer:coarse) {
+    #hint { display:none; }
+    #hotbar { bottom:86px; }
+    .slot { width:46px; height:46px; }
+    #touchUI { display:block; position:fixed; inset:auto 0 0 0; z-index:30; pointer-events:none; }
+    #joy { position:absolute; left:14px; bottom:14px; width:110px; height:110px; background:rgba(255,255,255,.15); border:2px solid rgba(255,255,255,.4); border-radius:50%; pointer-events:auto; }
+    #stick { position:absolute; left:35px; top:35px; width:40px; height:40px; background:rgba(255,255,255,.6); border-radius:50%; }
+    .tbtn { position:absolute; pointer-events:auto; background:rgba(0,0,0,.55); color:#fff; border:2px solid #fff; border-radius:50%; width:58px; height:58px; font-size:11px; }
+    #btnJump { right:16px; bottom:80px; } #btnBreak { right:88px; bottom:22px; } #btnPlace { right:16px; bottom:14px; }
+  }
+</style>
+<script type="importmap">{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }</script>
+</head>
+<body>
+<div id="game"></div>
+<div id="crosshair"></div>
+<div id="info">FPS: -- | Блоков: --<br>XYZ: --</div>
+<div id="hint">ЛКМ — сломать · ПКМ — поставить<br><kbd>1–8</kbd> выбор · <kbd>F</kbd> полёт · <kbd>R</kbd> респаун</div>
+<div id="hotbar"></div>
+<div id="toolbar"><button id="saveBtn">💾 Сохранить</button><button id="resetBtn">🌍 Новый мир</button></div>
+<div id="touchUI"><div id="joy"><div id="stick"></div></div><button class="tbtn" id="btnJump">ПРЫГ</button><button class="tbtn" id="btnBreak">ЛОМ</button><button class="tbtn" id="btnPlace">СТР</button></div>
+<div id="overlay"><div class="panel">
+  <h1>⛏️ МИНИ-<span>МАЙНКРАФТ</span></h1>
+  <p>Воксельный мир 32×32 с холмами и деревьями.<br>Строй, ломай, исследуй!</p>
+  <p><kbd>W A S D</kbd> — движение · мышь — обзор<br><kbd>Space</kbd> — прыжок · <kbd>ЛКМ</kbd> — сломать · <kbd>ПКМ</kbd> — поставить<br><kbd>1–8</kbd> / колесо — выбор блока · <kbd>F</kbd> — полёт</p>
+  <button id="playBtn">▶ ИГРАТЬ</button>
+  <p style="font-size:12px;color:#888">Клик захватывает мышь. Esc — освободить.</p>
+</div></div>
+<script type="module">
+import * as THREE from 'three';
+
+// ---------- Константы ----------
+const WX = 32, WZ = 32, WY = 32;
+const BLOCK = { AIR:0, GRASS:1, DIRT:2, STONE:3, LOG:4, LEAVES:5, SAND:6, PLANKS:7, BEDROCK:8 };
+const NAMES = {1:'Трава',2:'Земля',3:'Камень',4:'Дерево',5:'Листва',6:'Песок',7:'Доски',8:'Бедрок'};
+const HOTBAR = [1,2,3,4,5,6,7,8];
+let selected = 0;
+
+// ---------- Мир ----------
+const world = new Map();
+const key = (x,y,z)=>x+','+y+','+z;
+const inBounds=(x,y,z)=>x>=0&&x<WX&&z>=0&&z<WZ&&y>=0&&y<WY;
+function getBlock(x,y,z){ if(y<0) return BLOCK.BEDROCK; if(!inBounds(x,y,z)) return BLOCK.AIR; return world.get(key(x,y,z))||BLOCK.AIR; }
+function setBlock(x,y,z,v){ if(!inBounds(x,y,z)) return; if(v===BLOCK.AIR) world.delete(key(x,y,z)); else world.set(key(x,y,z),v); }
+const isSolid=(x,y,z)=>getBlock(x,y,z)!==BLOCK.AIR;
+
+function pseudoRand(x,z){ let h = Math.sin(x*127.1+z*311.7)*43758.5453; return h-Math.floor(h); }
+function genWorld(){
+  world.clear();
+  const hmap=[];
+  for(let x=0;x<WX;x++){ hmap[x]=[];
+    for(let z=0;z<WZ;z++){
+      let h = 5 + Math.sin(x*0.35)*Math.cos(z*0.35)*1.6 + Math.sin(x*0.12+z*0.18)*2.0 + pseudoRand(x,z)*1.4;
+      h = Math.max(2,Math.min(12,Math.floor(h)));
+      hmap[x][z]=h;
+      let top = (x<6&&z<6)||pseudoRand(z,x)>0.93 ? BLOCK.SAND : BLOCK.GRASS;
+      for(let y=0;y<=h;y++){
+        let b = y===0?BLOCK.BEDROCK : y===h?top : y>h-3?(top===BLOCK.SAND?BLOCK.SAND:BLOCK.DIRT) : BLOCK.STONE;
+        setBlock(x,y,z,b);
+      }
+    }
+  }
+  // деревья
+  let placed=0, guard=0;
+  while(placed<9&&guard++<200){
+    const x=3+Math.floor(Math.random()*(WX-6)), z=3+Math.floor(Math.random()*(WZ-6));
+    const h=hmap[x][z];
+    if(getBlock(x,h,z)!==BLOCK.GRASS) continue;
+    const th=4;
+    for(let i=1;i<=th;i++) setBlock(x,h+i,z,BLOCK.LOG);
+    for(let dx=-2;dx<=2;dx++)for(let dz=-2;dz<=2;dz++)for(let dy=0;dy<2;dy++){
+      if(Math.abs(dx)===2&&Math.abs(dz)===2&&dy===1) continue;
+      const px=x+dx,py=h+th-1+dy,pz=z+dz;
+      if(inBounds(px,py,pz)&&getBlock(px,py,pz)===BLOCK.AIR) setBlock(px,py,pz,BLOCK.LEAVES);
+    }
+    setBlock(x,h+th+1,z,BLOCK.LEAVES);
+    placed++;
+  }
+}
+
+// ---------- Текстуры (процедурный атлас) ----------
+function noiseOn(ctx,x0,y0,w,h,base,vary){
+  const seed=base[0]+base[1]*2+base[2]*3;
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const v=(Math.sin((x*12.9+y*78.2+seed*0.37))*43758.5)%1;
+    const n=Math.abs(v)*vary;
+    ctx.fillStyle=`rgb(${base[0]+n|0},${base[1]+n|0},${base[2]+n|0})`;
+    ctx.fillRect(x0+x,y0+y,1,1);
+  }
+}
+function makeAtlas(){
+  const T=16, N=10, c=document.createElement('canvas'); c.width=T*N; c.height=T;
+  const g=c.getContext('2d');
+  const tile=(i,fn)=>{ g.save(); g.translate(i*T,0); g.beginPath(); g.rect(0,0,T,T); g.clip(); fn(); g.restore(); };
+  tile(0,()=>noiseOn(g,0,0,T,T,[106,170,64],28));                       // grass top
+  tile(1,()=>{ noiseOn(g,0,0,T,T,[134,96,67],22); noiseOn(g,0,0,T,5,[106,170,64],24); }); // grass side
+  tile(2,()=>noiseOn(g,0,0,T,T,[134,96,67],24));                        // dirt
+  tile(3,()=>noiseOn(g,0,0,T,T,[128,128,128],18));                      // stone
+  tile(4,()=>{ noiseOn(g,0,0,T,T,[102,81,50],14); g.fillStyle='#5d4a2f'; for(let x=2;x<T;x+=4) g.fillRect(x,0,1,T); }); // log side
+  tile(5,()=>{ noiseOn(g,0,0,T,T,[177,142,90],12); g.strokeStyle='#8a6b42'; for(let r=1;r<8;r++){g.strokeRect(8-r,8-r,r*2,r*2);} }); // log top
+  tile(6,()=>{ noiseOn(g,0,0,T,T,[45,120,40],30); g.fillStyle='rgba(20,60,20,.8)'; for(let i=0;i<14;i++) g.fillRect(Math.random()*T|0,Math.random()*T|0,2,2); }); // leaves
+  tile(7,()=>noiseOn(g,0,0,T,T,[220,203,142],16));                      // sand
+  tile(8,()=>{ noiseOn(g,0,0,T,T,[170,130,80],10); g.fillStyle='#7a5c33'; for(let y=3;y<T;y+=4) g.fillRect(0,y,T,1); g.fillRect(7,0,1,8); g.fillRect(3,8,1,8); g.fillRect(11,8,1,8); }); // planks
+  tile(9,()=>noiseOn(g,0,0,T,T,[60,60,60],26));                         // bedrock
+  const tex=new THREE.CanvasTexture(c);
+  tex.magFilter=THREE.NearestFilter; tex.minFilter=THREE.NearestFilter;
+  tex.colorSpace=THREE.SRGBColorSpace; tex.generateMipmaps=false;
+  return {tex,N};
+}
+const atlas=makeAtlas();
+function tileFor(block,face){
+  switch(block){
+    case BLOCK.GRASS: return face==='py'?0:face==='ny'?2:1;
+    case BLOCK.DIRT: return 2; case BLOCK.STONE: return 3;
+    case BLOCK.LOG: return (face==='py'||face==='ny')?5:4;
+    case BLOCK.LEAVES: return 6; case BLOCK.SAND: return 7;
+    case BLOCK.PLANKS: return 8; case BLOCK.BEDROCK: return 9;
+    default: return 3;
+  }
+}
+
+// ---------- Сцена ----------
+const container=document.getElementById('game');
+const renderer=new THREE.WebGLRenderer({antialias:false});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+container.appendChild(renderer.domElement);
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x87ceeb);
+scene.fog=new THREE.Fog(0x87ceeb,30,90);
+const camera=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,0.1,200);
+scene.add(new THREE.HemisphereLight(0xcfe8ff,0x6b8e4e,1.0));
+const sun=new THREE.DirectionalLight(0xffffff,1.4); sun.position.set(30,50,20); scene.add(sun);
+// облака
+const clouds=[];
+{ const cm=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.85});
+  for(let i=0;i<10;i++){ const m=new THREE.Mesh(new THREE.BoxGeometry(4+Math.random()*5,1,3+Math.random()*3),cm);
+    m.position.set(Math.random()*WX,22+Math.random()*3,Math.random()*WZ); scene.add(m); clouds.push(m); } }
+
+// ---------- Меш мира (culled faces) ----------
+let worldMesh=null;
+function buildWorldMesh(){
+  const pos=[],nrm=[],uv=[],idx=[];
+  const N=atlas.N;
+  const pushFace=(x,y,z,face,corners,normal,tile)=>{
+    const base=pos.length/3;
+    const u0=tile/N, u1=(tile+1)/N;
+    const uvs=[[0,0],[1,0],[1,1],[0,1]];
+    corners.forEach((c,i)=>{ pos.push(x+c[0],y+c[1],z+c[2]); nrm.push(...normal); uv.push(u0+uvs[i][0]/N,1-uvs[i][1]); });
+    idx.push(base,base+1,base+2,base,base+2,base+3);
+  };
+  const F={
+    px:{d:[1,0,0],c:[[1,0,0],[1,1,0],[1,1,1],[1,0,1]],n:[1,0,0]},
+    nx:{d:[-1,0,0],c:[[0,0,1],[0,1,1],[0,1,0],[0,0,0]],n:[-1,0,0]},
+    py:{d:[0,1,0],c:[[0,1,1],[1,1,1],[1,1,0],[0,1,0]],n:[0,1,0]},
+    ny:{d:[0,-1,0],c:[[0,0,0],[1,0,0],[1,0,1],[0,0,1]],n:[0,-1,0]},
+    pz:{d:[0,0,1],c:[[0,0,1],[1,0,1],[1,1,1],[0,1,1]],n:[0,0,1]},
+    nz:{d:[0,0,-1],c:[[1,0,0],[0,0,0],[0,1,0],[1,1,0]],n:[0,0,-1]},
+  };
+  for(const [k,b] of world){
+    const [x,y,z]=k.split(',').map(Number);
+    for(const f in F){
+      const d=F[f].d;
+      if(getBlock(x+d[0],y+d[1],z+d[2])!==BLOCK.AIR) continue;
+      pushFace(x,y,z,f,F[f].c,F[f].n,tileFor(b,f));
+    }
+  }
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+  geo.setAttribute('normal',new THREE.Float32BufferAttribute(nrm,3));
+  geo.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
+  geo.setIndex(idx); geo.computeBoundingSphere();
+  if(worldMesh){ scene.remove(worldMesh); worldMesh.geometry.dispose(); }
+  worldMesh=new THREE.Mesh(geo,new THREE.MeshLambertMaterial({map:atlas.tex,side:THREE.DoubleSide}));
+  scene.add(worldMesh);
+  document.getElementById('info').dataset.count=world.size;
+}
+
+// подсветка блока
+const hl=new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1.002,1.002,1.002)),new THREE.LineBasicMaterial({color:0x000000}));
+hl.visible=false; scene.add(hl);
+
+// ---------- Игрок ----------
+const player={ pos:new THREE.Vector3(WX/2,12,WZ/2), vel:new THREE.Vector3(), yaw:Math.PI*0.25, pitch:-0.2, onGround:false, fly:false };
+const P_W=0.3, P_H=1.8, EYE=1.62;
+function spawn(){ for(let y=WY-1;y>0;y--){ if(isSolid(WX/2|0,y,WZ/2|0)){ player.pos.set(WX/2+0.5,y+1.01,WZ/2+0.5); break; } } player.vel.set(0,0,0); }
+function collides(px,py,pz){
+  const x0=Math.floor(px-P_W),x1=Math.floor(px+P_W),y0=Math.floor(py),y1=Math.floor(py+P_H-0.01),z0=Math.floor(pz-P_W),z1=Math.floor(pz+P_W);
+  for(let x=x0;x<=x1;x++)for(let y=y0;y<=y1;y++)for(let z=z0;z<=z1;z++) if(isSolid(x,y,z)) return true;
+  return false;
+}
+function moveAxis(axis,amt){
+  const p=player.pos;
+  if(axis==='x')p.x+=amt; else if(axis==='y')p.y+=amt; else p.z+=amt;
+  if(collides(p.x,p.y,p.z)){
+    if(axis==='x')p.x=Math.round(p.x)+(amt>0?-P_W-0.001:P_W+0.001)-(Math.round(p.x)-p.x)*0+ (amt>0?0:0),
+      p.x=(amt>0?Math.floor(p.x+P_W)-P_W-0.001:Math.floor(p.x-P_W)+1+P_W+0.001);
+    if(axis==='z')p.z=(amt>0?Math.floor(p.z+P_W)-P_W-0.001:Math.floor(p.z-P_W)+1+P_W+0.001);
+    if(axis==='y'){ if(amt<0){p.y=Math.floor(p.y)+1.0+0.001;player.onGround=true;} else p.y=Math.ceil(p.y+P_H)-P_H-0.001; player.vel.y=0; }
+    if(axis!=='y') player.vel[axis]=0;
+  }
+}
+
+// ---------- Ввод ----------
+const keys={};
+addEventListener('keydown',e=>{
+  keys[e.code]=true;
+  if(e.code.startsWith('Digit')){ const n=+e.code.slice(5); if(n>=1&&n<=HOTBAR.length) select(n-1); }
+  if(e.code==='KeyF'){ player.fly=!player.fly; player.vel.y=0; }
+  if(e.code==='KeyR') spawn();
+  if(['Space','ArrowUp'].includes(e.code)) e.preventDefault();
+});
+addEventListener('keyup',e=>keys[e.code]=false);
+const overlay=document.getElementById('overlay');
+document.getElementById('playBtn').onclick=()=>{ overlay.classList.add('hidden'); renderer.domElement.requestPointerLock?.(); };
+renderer.domElement.addEventListener('click',()=>{ if(document.pointerLockElement!==renderer.domElement) renderer.domElement.requestPointerLock?.(); });
+addEventListener('mousemove',e=>{
+  if(document.pointerLockElement!==renderer.domElement) return;
+  player.yaw-=e.movementX*0.0026; player.pitch-=e.movementY*0.0026;
+  player.pitch=Math.max(-1.55,Math.min(1.55,player.pitch));
+});
+addEventListener('wheel',e=>{ select((selected+(e.deltaY>0?1:HOTBAR.length-1))%HOTBAR.length); },{passive:true});
+addEventListener('contextmenu',e=>e.preventDefault());
+
+// рейкаст DDA
+function raycastVoxel(maxD=7){
+  const dir=new THREE.Vector3(0,0,-1).applyEuler(new THREE.Euler(player.pitch,player.yaw,0,'YXZ'));
+  let x=Math.floor(camPos().x),y=Math.floor(camPos().y),z=Math.floor(camPos().z);
+  const stepX=Math.sign(dir.x)||1,stepY=Math.sign(dir.y)||1,stepZ=Math.sign(dir.z)||1;
+  const tDeltaX=Math.abs(1/(dir.x||1e-9)),tDeltaY=Math.abs(1/(dir.y||1e-9)),tDeltaZ=Math.abs(1/(dir.z||1e-9));
+  let tMaxX=dir.x!==0?((stepX>0?(x+1-camPos().x):(camPos().x-x))*tDeltaX):1e9;
+  let tMaxY=dir.y!==0?((stepY>0?(y+1-camPos().y):(camPos().y-y))*tDeltaY):1e9;
+  let tMaxZ=dir.z!==0?((stepZ>0?(z+1-camPos().z):(camPos().z-z))*tDeltaZ):1e9;
+  let nx=0,ny=0,nz=0,t=0;
+  for(let i=0;i<64;i++){
+    if(tMaxX<tMaxY&&tMaxX<tMaxZ){x+=stepX;t=tMaxX;tMaxX+=tDeltaX;nx=-stepX;ny=0;nz=0;}
+    else if(tMaxY<tMaxZ){y+=stepY;t=tMaxY;tMaxY+=tDeltaY;nx=0;ny=-stepY;nz=0;}
+    else{z+=stepZ;t=tMaxZ;tMaxZ+=tDeltaZ;nx=0;ny=0;nz=-stepZ;}
+    if(t>maxD) return null;
+    if(getBlock(x,y,z)!==BLOCK.AIR) return {x,y,z,nx,ny,nz};
+  }
+  return null;
+}
+function playerIntersects(bx,by,bz){
+  const p=player.pos;
+  return bx+1>p.x-P_W&&bx<p.x+P_W&&by+1>p.y&&by<p.y+P_H&&bz+1>p.z-P_W&&bz<p.z+P_W;
+}
+addEventListener('mousedown',e=>{
+  if(overlay.classList.contains('hidden')===false) return;
+  if(document.pointerLockElement!==renderer.domElement&&e.target===renderer.domElement) return;
+  const hit=raycastVoxel();
+  if(!hit) return;
+  if(e.button===0){ if(hit.y>0) { setBlock(hit.x,hit.y,hit.z,BLOCK.AIR); buildWorldMesh(); } }
+  else if(e.button===2){
+    const px=hit.x+hit.nx,py=hit.y+hit.ny,pz=hit.z+hit.nz;
+    if(!inBounds(px,py,pz)||getBlock(px,py,pz)!==BLOCK.AIR||playerIntersects(px,py,pz)) return;
+    setBlock(px,py,pz,HOTBAR[selected]); buildWorldMesh();
+  }
+});
+
+// хотбар с миниатюрами
+function blockIcon(tile){
+  const c=document.createElement('canvas'); c.width=c.height=16;
+  const g=c.getContext('2d'); g.imageSmoothingEnabled=false;
+  g.drawImage(atlas.tex.image,tile*16,0,16,16,0,0,16,16);
+  return c.toDataURL();
+}
+function buildHotbar(){
+  const bar=document.getElementById('hotbar'); bar.innerHTML='';
+  HOTBAR.forEach((b,i)=>{
+    const d=document.createElement('div'); d.className='slot'+(i===selected?' selected':'');
+    const img=document.createElement('img'); img.width=32;img.height=32; img.style.imageRendering='pixelated';
+    const face=b===BLOCK.GRASS?1:tileFor(b,'px');
+    img.src=blockIcon(face);
+    const lb=document.createElement('small'); lb.textContent=`${i+1} ${NAMES[b]}`;
+    d.append(img,lb); d.onclick=()=>select(i); bar.appendChild(d);
+  });
+}
+function select(i){ selected=i; document.querySelectorAll('.slot').forEach((s,j)=>s.classList.toggle('selected',j===i)); }
+
+// тач
+const joy={x:0,y:0}; let lookId=null,lookLast=null;
+const joyEl=document.getElementById('joy'),stick=document.getElementById('stick');
+joyEl?.addEventListener('touchstart',e=>e.preventDefault(),{passive:false});
+addEventListener('touchmove',e=>{
+  for(const t of e.changedTouches){
+    if(t.target===joyEl||joyEl.contains(t.target)){
+      const r=joyEl.getBoundingClientRect();
+      let dx=(t.clientX-(r.left+r.width/2))/(r.width/2),dy=(t.clientY-(r.top+r.height/2))/(r.height/2);
+      const l=Math.hypot(dx,dy)||1; if(l>1){dx/=l;dy/=l;} joy.x=dx;joy.y=dy;
+      stick.style.left=(35+dx*30)+'px'; stick.style.top=(35+dy*30)+'px';
+    } else if(t.identifier===lookId&&lookLast){
+      player.yaw-=(t.clientX-lookLast.x)*0.006; player.pitch-=(t.clientY-lookLast.y)*0.006;
+      player.pitch=Math.max(-1.55,Math.min(1.55,player.pitch)); lookLast={x:t.clientX,y:t.clientY};
+    }
+  }
+},{passive:true});
+addEventListener('touchstart',e=>{
+  for(const t of e.changedTouches){
+    if(t.target.closest?.('#joy,.tbtn,.slot,#toolbar,.panel')) continue;
+    if(overlay.classList.contains('hidden')){ lookId=t.identifier; lookLast={x:t.clientX,y:t.clientY}; }
+  }
+  if(e.target.id==='btnJump') keys.Space=true;
+  if(e.target.id==='btnBreak'||e.target.id==='btnPlace'){
+    const hit=raycastVoxel();
+    if(hit){ if(e.target.id==='btnBreak'&&hit.y>0){setBlock(hit.x,hit.y,hit.z,BLOCK.AIR);buildWorldMesh();}
+      else{const px=hit.x+hit.nx,py=hit.y+hit.ny,pz=hit.z+hit.nz;
+        if(inBounds(px,py,pz)&&getBlock(px,py,pz)===BLOCK.AIR&&!playerIntersects(px,py,pz)){setBlock(px,py,pz,HOTBAR[selected]);buildWorldMesh();}}}
+  }
+},{passive:true});
+addEventListener('touchend',e=>{
+  for(const t of e.changedTouches) if(t.identifier===lookId){lookId=null;lookLast=null;}
+  if(e.target.id==='btnJump') keys.Space=false;
+  joy.x=joy.y=0; stick.style.left='35px'; stick.style.top='35px';
+});
+
+// сохранение
+document.getElementById('saveBtn').onclick=()=>{ localStorage.setItem('mini-mc',JSON.stringify([...world])); alert('Мир сохранён!'); };
+document.getElementById('resetBtn').onclick=()=>{ if(confirm('Сгенерировать новый мир?')){ localStorage.removeItem('mini-mc'); genWorld(); buildWorldMesh(); spawn(); } };
+
+// ---------- Цикл ----------
+function camPos(){ return new THREE.Vector3(player.pos.x,player.pos.y+EYE,player.pos.z); }
+const clock=new THREE.Clock();
+let fpsA=0,fpsN=0,fpsT=0;
+function tick(){
+  requestAnimationFrame(tick);
+  const dt=Math.min(clock.getDelta(),0.05);
+  // движение
+  const f=(keys.KeyW?1:0)-(keys.KeyS?1:0)+(-joy.y), s=(keys.KeyD?1:0)-(keys.KeyA?1:0)+joy.x;
+  const sin=Math.sin(player.yaw),cos=Math.cos(player.yaw);
+  let mx=(-sin*f+cos*s), mz=(-cos*f-sin*s);
+  const ml=Math.hypot(mx,mz); if(ml>1){mx/=ml;mz/=ml;}
+  const speed=keys.ControlLeft?8:player.fly?10:5;
+  if(player.fly){
+    player.vel.x=mx*speed; player.vel.z=mz*speed;
+    player.vel.y=((keys.Space?1:0)-(keys.ShiftLeft?1:0))*8;
+    player.onGround=false;
+  } else {
+    player.vel.x=mx*speed; player.vel.z=mz*speed;
+    player.vel.y-=26*dt;
+    if(keys.Space&&player.onGround){ player.vel.y=8.6; player.onGround=false; }
+  }
+  player.onGround=false;
+  moveAxis('x',player.vel.x*dt); moveAxis('z',player.vel.z*dt); moveAxis('y',player.vel.y*dt);
+  if(player.pos.y<-10) spawn();
+  camera.position.copy(camPos());
+  camera.rotation.set(0,0,0); camera.rotation.order='YXZ'; camera.rotation.y=player.yaw; camera.rotation.x=player.pitch;
+  // прицел
+  const hit=raycastVoxel();
+  if(hit){ hl.visible=true; hl.position.set(hit.x+0.5,hit.y+0.5,hit.z+0.5); } else hl.visible=false;
+  clouds.forEach(c=>{ c.position.x+=dt*0.5; if(c.position.x>WX+6)c.position.x=-6; });
+  // HUD
+  fpsA+=1/Math.max(dt,1e-4); fpsN++; fpsT+=dt;
+  if(fpsT>0.5){ document.getElementById('info').innerHTML=`FPS: ${Math.round(fpsA/fpsN)} | Блоков: ${world.size}<br>XYZ: ${player.pos.x.toFixed(1)} / ${player.pos.y.toFixed(1)} / ${player.pos.z.toFixed(1)}${player.fly?' · ✈ ПОЛЁТ':''}`; fpsA=fpsN=fpsT=0; }
+  renderer.render(scene,camera);
+}
+
+addEventListener('resize',()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); });
+
+// ---------- Старт ----------
+try{
+  const saved=localStorage.getItem('mini-mc');
+  if(saved){ for(const [k,v] of JSON.parse(saved)) world.set(k,v); } else genWorld();
+}catch{ genWorld(); }
+if(world.size===0) genWorld();
+buildWorldMesh(); buildHotbar(); spawn();
+window.__sceneReady=true;
+window.__game={player,spawn,world,getBlock,setBlock,buildWorldMesh,select,HOTBAR};
+tick();
+</script>
+</body>
+</html>
